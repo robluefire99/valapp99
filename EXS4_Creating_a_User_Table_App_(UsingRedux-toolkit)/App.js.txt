@@ -1,0 +1,159 @@
+/*App.js*/
+
+import React, { Fragment, useState, useEffect } from "react";
+import { configureStore, createSlice } from "@reduxjs/toolkit";
+import { Provider, useDispatch, useSelector } from "react-redux";
+import styled from "styled-components";
+import axios from "axios";
+import UserTable from "./UserTable";
+
+// Checkbox definitions
+const checkboxes = [
+  { id: "filterUsername", name: "filterUsername", label: "Filter by Username" },
+  { id: "filterCity", name: "filterCity", label: "Filter by City" },
+  { id: "filterCompany", name: "filterCompany", label: "Filter by Company" },
+];
+
+// Mapping filter names to value extractors
+const filterMap = {
+  filterUsername: (user) => user.username,
+  filterCity: (user) => user.address.city,
+  filterCompany: (user) => user.company.name,
+};
+
+// Initial Redux state
+const initialState = {
+  filters: [],
+  searchData: [],
+  users: [],
+};
+
+// Helper: given active filters and query, return a predicate
+const filterFn = (filters, query) => (item) => {
+  const filterFns = filters.map((f) => filterMap[f]);
+  const combined = filterFns.map((fn) => fn(item)).join().toLowerCase();
+  return combined.includes(query.toLowerCase());
+};
+
+// Create slice
+const usersSlice = createSlice({
+  name: "users",
+  initialState,
+  reducers: {
+    init(state, action) {
+      state.searchData = action.payload;
+      state.users = action.payload;
+      state.filters = [];
+    },
+    search(state, action) {
+      const query = action.payload;
+      if (!query) {
+        state.users = state.searchData;
+      } else {
+        state.users = state.searchData.filter(filterFn(state.filters, query));
+      }
+    },
+    addFilter(state, action) {
+      const name = action.payload;
+      if (!state.filters.includes(name)) {
+        state.filters.push(name);
+      }
+    },
+    removeFilter(state, action) {
+      state.filters = state.filters.filter((f) => f !== action.payload);
+    },
+  },
+});
+
+// Export actions
+const { init, search, addFilter, removeFilter } = usersSlice.actions;
+
+// Configure store
+const store = configureStore({ reducer: usersSlice.reducer });
+
+export default function App() {
+  return (
+    <Provider store={store}>
+      <UserTableApp />
+    </Provider>
+  );
+}
+
+// Selector to read users
+const selectUsers = (state) => state.users;
+
+function UserTableApp() {
+  const dispatch = useDispatch();
+  const users = useSelector(selectUsers);
+  const [query, setQuery] = useState("");
+
+  // Load data on mount
+  useEffect(() => {
+    axios
+      .get("https://jsonplaceholder.typicode.com/users")
+      .then((res) => res.data)
+      .then((data) => dispatch(init(data)));
+  }, [dispatch]);
+
+  // Trigger search on query change
+  useEffect(() => {
+    dispatch(search(query));
+  }, [dispatch, query]);
+
+  const handleChange = (e) => setQuery(e.target.value);
+  const handleReset = () => setQuery("");
+
+  const handleCheckboxChange = (e) => {
+    const name = e.target.name;
+    if (e.target.checked) dispatch(addFilter(name));
+    else dispatch(removeFilter(name));
+    dispatch(search(query));
+  };
+
+  return (
+    <Container>
+      <div>
+        <label htmlFor="search-query">Search</label>
+        <input
+          id="search-query"
+          name="search-query"
+          type="text"
+          value={query}
+          onChange={handleChange}
+        />
+        <button type="button" onClick={handleReset}>
+          Reset
+        </button>
+      </div>
+
+      <CheckboxController>
+        {checkboxes.map(({ id, name, label }) => (
+          <Fragment key={id}>
+            <input
+              type="checkbox"
+              id={id}
+              name={name}
+              onChange={handleCheckboxChange}
+            />
+            <label htmlFor={id}>{label}</label>
+          </Fragment>
+        ))}
+      </CheckboxController>
+
+      <UserTable users={users} />
+    </Container>
+  );
+}
+
+// Styled components
+const Container = styled.div`
+  min-height: 600px;
+`;
+
+const CheckboxController = styled.div`
+  padding: 8px 0;
+
+  input:not(:first-of-type) {
+    margin-left: 20px;
+  }
+`;
